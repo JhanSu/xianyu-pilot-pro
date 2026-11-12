@@ -204,6 +204,7 @@ public class OrderDeliveryCommandService {
                             "accountId", order.getAccountId(),
                             "externalOrderId", order.getExternalOrderId()
                     ),
+                    120L,
                     tenantId
             );
             return normalizeSyncResult(result, "同步结果为空");
@@ -222,7 +223,7 @@ public class OrderDeliveryCommandService {
         Map<String, Object> result;
         try {
             result = normalizeSyncResult(
-                    automationClient.postInternalForData("/api/internal/orders/sync-sold", payload, tenantId),
+                    automationClient.postInternalForData("/api/internal/orders/sync-sold", payload, 120L, tenantId),
                     "同步结果为空"
             );
         } catch (Exception e) {

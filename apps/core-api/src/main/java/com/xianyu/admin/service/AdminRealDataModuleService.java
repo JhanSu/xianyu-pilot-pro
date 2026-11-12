@@ -250,9 +250,15 @@ public class AdminRealDataModuleService {
             String buyer = col("xianyu_trade_order", "o", List.of("buyer_nickname", "buyer_name", "receiver_name", "buyer_id"), "''");
             String amount = money(orderAmountExpr("xianyu_trade_order", "o"));
             String username = usernameExpr("u");
-            String payStatus = payStatusLabel(col("xianyu_trade_order", "o", List.of("pay_status"), "NULL"));
+            // xianyu_trade_order 没有 pay_status 列，订单支付状态由 order_status 表达：
+            // 0=待付款；1/2/3/4=已付款、待发货、已发货、交易成功；5=交易关闭/退款。
+            // 之前 pay_status 列不存在导致所有订单固定显示“待支付”。
+            String payStatus = "CASE WHEN CAST(o.order_status AS CHAR) IN ('0') THEN '待支付' " +
+                    "WHEN CAST(o.order_status AS CHAR) IN ('5') THEN '已退款' ELSE '已支付' END";
             String orderStatus = orderStatusLabel(col("xianyu_trade_order", "o", List.of("order_status"), "NULL"));
-            String deliveryStatus = deliveryStatusLabel(col("xianyu_trade_order", "o", List.of("delivery_status", "sync_status"), "NULL"));
+            // 同样，订单表没有 delivery_status/sync_status 列，按订单状态推导发货状态。
+            String deliveryStatus = "CASE WHEN CAST(o.order_status AS CHAR) IN ('3','4') THEN '成功' " +
+                    "WHEN CAST(o.order_status AS CHAR) IN ('5') THEN '已关闭' ELSE '待处理' END";
             String created = col("xianyu_trade_order", "o", List.of("create_time", "created_time"), "NULL");
             parts.add("SELECT o.id AS id, 'xianyu_trade_order' AS sourceTable, " + orderNo + " AS orderNo, " + buyer + " AS buyerName, " + username + " AS username, " + amount + " AS amount, " + payStatus + " AS payStatus, " + orderStatus + " AS orderStatus, " + deliveryStatus + " AS deliveryStatus, " + created + " AS createdTime, " + orderStatus + " AS status " +
                     "FROM xianyu_trade_order o " + accountJoin("xianyu_trade_order", "o") + userJoin("xianyu_trade_order", "o", "a") + " WHERE " + notDeleted("xianyu_trade_order", "o"));

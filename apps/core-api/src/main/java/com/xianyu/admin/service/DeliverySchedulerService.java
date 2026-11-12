@@ -605,7 +605,9 @@ public class DeliverySchedulerService {
                 payload.put("tenantId", tenantId);
                 payload.put("accountId", accountId);
                 payload.put("externalOrderId", null);
-                automationClient.postInternalForData("/api/internal/orders/sync-sold", payload, tenantId);
+                // 订单同步需要翻页拉取全部已售订单并查询 4 种退款状态，默认 30 秒在订单量大时会超时。
+                // 这里给到 120 秒，仍受 AutomationClient 的 180 秒上限保护。
+                automationClient.postInternalForData("/api/internal/orders/sync-sold", payload, 120L, tenantId);
                 synced++;
             } catch (Exception e) {
                 log.debug("同步账号 {} 订单失败 (tenantId={}), errorType={}",
