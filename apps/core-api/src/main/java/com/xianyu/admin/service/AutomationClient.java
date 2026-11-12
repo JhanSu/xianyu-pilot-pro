@@ -170,6 +170,51 @@ public class AutomationClient {
         streamSse(path, query, outputStream, com.xianyu.admin.security.TenantContext.getCurrentTenantId());
     }
 
+    /**
+     * 读取 Python 服务的 SSE 流，按 data 行回调给 Spring SseEmitter。
+     * 与 streamSse(OutputStream) 的区别：不依赖 StreamingResponseBody 的缓冲行为，
+     * SseEmitter 会自行管理 servlet async 响应与事件 flush。
+     */
+    public void streamSseEvents(String path, Map<String, ?> query,
+                                java.util.function.Consumer<String> eventConsumer,
+                                Long tenantId) {
+        try {
+            String url = normalizeBase(automationBaseUrl) + ensureSlash(path) + toQuery(query);
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Accept", "text/event-stream")
+                    .timeout(Duration.ofMinutes(30))
+                    .GET();
+            applyInternalHeaders(builder, tenantId);
+            HttpResponse<java.io.InputStream> resp = httpClient.send(
+                    builder.build(), HttpResponse.BodyHandlers.ofInputStream());
+            if (resp.statusCode() >= 400) {
+                String body = readResponseText(resp.body(), MAX_ERROR_RESPONSE_BYTES);
+                ensureSuccessStatus(resp.statusCode(), body);
+            }
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(resp.body(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (line.startsWith("data:")) {
+                        String data = line.substring(5).trim();
+                        if (!data.isEmpty()) {
+                            eventConsumer.accept(data);
+                        }
+                    }
+                }
+            }
+        } catch (BizException e) {
+            throw e;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BizException(503, "实时消息服务暂时不可用，请稍后重试");
+        } catch (Exception e) {
+            log.error("订阅自动化 SSE 事件失败, path={}, errorType={}", path, e.getClass().getSimpleName());
+            throw new BizException(503, "实时消息服务暂时不可用，请稍后重试");
+        }
+    }
+
     public void streamSse(String path, Map<String, ?> query, java.io.OutputStream outputStream, Long tenantId) {
         try {
             String url = normalizeBase(automationBaseUrl) + ensureSlash(path) + toQuery(query);
@@ -186,7 +231,15 @@ public class AutomationClient {
                 ensureSuccessStatus(resp.statusCode(), body);
             }
             try (java.io.InputStream input = resp.body()) {
-                input.transferTo(outputStream);
+                // SSE 是长连接，不能等待 transferTo() 读到 EOF 后一次性 flush：
+                // Python 端发来第一条事件后连接会一直保持，transferTo() 永远不返回，
+                // 导致浏览器 EventSource 一直停在“连接中”。这里按块转发并立即 flush。
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = input.read(buffer)) != -1) {
+                    outputStream.write(buffer, 0, read);
+                    outputStream.flush();
+                }
                 outputStream.flush();
             }
         } catch (BizException e) {

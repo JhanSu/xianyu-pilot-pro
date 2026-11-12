@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Value;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.MediaType;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.multipart.MultipartHttpServletRequest;
@@ -865,37 +866,40 @@ public class AutomationProxyController {
     }
 
     @GetMapping(value = "/sse/subscribe", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public StreamingResponseBody sseSubscribe(@RequestParam("ticket") String ticket) {
-        return outputStream -> {
+    public SseEmitter sseSubscribe(@RequestParam("ticket") String ticket) {
+        // 使用 SseEmitter 而不是 StreamingResponseBody：后者在本项目的 Tomcat/异步配置下
+        // 会卡在读取 Python 长连接上，浏览器 EventSource 始终收不到 onopen。
+        SseEmitter emitter = new SseEmitter(0L);
+        final SseTicket sseTicket;
+        try {
+            sseTicket = consumeSseTicket(ticket);
+        } catch (BizException e) {
+            emitter.completeWithError(e);
+            return emitter;
+        }
+        Thread worker = new Thread(() -> {
             try {
-                // 将 consumeSseTicket 移到 lambda 内部，确保异常也以 SSE 格式返回
-                SseTicket sseTicket;
-                try {
-                    sseTicket = consumeSseTicket(ticket);
-                } catch (BizException e) {
-                    String errorEvent = "event: error\ndata: {\"type\":\"error\",\"message\":\"" + escapeJson(e.getMessage()) + "\"}\n\n";
+                automationClient.streamSseEvents("/api/sse/subscribe", Map.of(), data -> {
                     try {
-                        outputStream.write(errorEvent.getBytes(StandardCharsets.UTF_8));
-                        outputStream.flush();
-                    } catch (Exception ignored) {
-                        // 客户端已断开，忽略
+                        emitter.send(SseEmitter.event().data(data));
+                    } catch (Exception sendError) {
+                        throw new IllegalStateException("SSE emitter send failed", sendError);
                     }
-                    return;
-                }
-                automationClient.streamSse("/api/sse/subscribe", Map.of(), outputStream, sseTicket.tenantId());
+                }, sseTicket.tenantId());
+                emitter.complete();
             } catch (Exception e) {
-                String requestId = org.slf4j.MDC.get("requestId");
-                log.error("SSE 订阅代理失败, requestId={}, errorType={}", requestId, e.getClass().getSimpleName());
-                String safeRequestId = requestId == null ? "" : escapeJson(requestId);
-                String errorEvent = "event: error\ndata: {\"type\":\"error\",\"message\":\"实时消息连接暂时不可用\",\"requestId\":\"" + safeRequestId + "\"}\n\n";
+                log.warn("SSE 订阅代理结束, requestId={}, errorType={}",
+                        org.slf4j.MDC.get("requestId"), e.getClass().getSimpleName());
                 try {
-                    outputStream.write(errorEvent.getBytes(StandardCharsets.UTF_8));
-                    outputStream.flush();
+                    emitter.completeWithError(e);
                 } catch (Exception ignored) {
                     // 客户端已断开，忽略
                 }
             }
-        };
+        }, "sse-proxy-" + sseTicket.tenantId());
+        worker.setDaemon(true);
+        worker.start();
+        return emitter;
     }
 
     private SseTicket consumeSseTicket(String ticket) {
