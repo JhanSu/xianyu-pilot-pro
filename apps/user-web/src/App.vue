@@ -155,6 +155,7 @@ const pageMap = {
   // 不加入左侧菜单、不加入移动端白名单（参考 fish-shop-edit 模式）
   'refund-detail': asyncPage(() => import('./pages/RefundDetailPage.vue')),
   opportunities: asyncPage(() => import('./pages/OpportunityPage.vue')),
+  'product-drafts': asyncPage(() => import('./pages/WorkflowDraftsPage.vue')),
   'fish-shop-data': asyncPage(() => import('./pages/FishShopDataPage.vue')),
   'fish-shop-browse': asyncPage(() => import('./pages/FishShopBrowsePage.vue')),
   messages: asyncPage(() => import('./pages/MessagesPage.vue')),

@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import random
@@ -1925,6 +1926,138 @@ async def list_workflow_drafts(
             logger, exc,
             operation="list workflow drafts",
             user_message="草稿列表暂时无法查询，请稍后重试",
+            code=503,
+        )
+
+
+@router.post("/drafts/batch-create", response_model=ResultObject)
+async def batch_create_workflow_drafts(
+    payload: Dict[str, Any] = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """把商机发掘采集到的商品批量存入系统商品草稿箱。
+
+    入参：{"account_id": 1, "items": [{itemId,title,price,description,image,images,link,...}]}
+    返回：{"created": N, "skipped": M, "total": T}
+    草稿状态为 draft，可在「商品草稿」页面批量发布。
+    """
+    try:
+        tenant_id = _require_tenant(current_user)
+    except ValueError:
+        return ResultObject.failed(TENANT_CONTEXT_REQUIRED_MESSAGE, 400)
+
+    try:
+        account_id = int(payload.get("account_id") or 0)
+    except (TypeError, ValueError):
+        account_id = 0
+    if account_id <= 0:
+        return ResultObject.failed("请选择发布账号", 400)
+
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, list) or not raw_items:
+        return ResultObject.failed("items 不能为空", 400)
+    if len(raw_items) > 500:
+        return ResultObject.failed("单次最多保存 500 个商品", 400)
+
+    try:
+        user_id = int(current_user.get("user_id") or 0) or None
+    except (TypeError, ValueError):
+        user_id = None
+
+    try:
+        account_exists = await db.execute(
+            text(
+                "SELECT id FROM xianyu_account "
+                "WHERE id=:account_id AND tenant_id=:tenant_id AND deleted=0 LIMIT 1"
+            ),
+            {"account_id": account_id, "tenant_id": tenant_id},
+        )
+        if account_exists.first() is None:
+            return ResultObject.failed("发布账号不存在或不属于当前用户", 404)
+
+        existing_rows = await db.execute(
+            text(
+                "SELECT source_item_id FROM workflow_goods_draft "
+                "WHERE tenant_id=:tenant_id AND account_id=:account_id "
+                "AND deleted=0 AND source_item_id IS NOT NULL"
+            ),
+            {"tenant_id": tenant_id, "account_id": account_id},
+        )
+        existing_ids = {str(row[0]) for row in existing_rows.fetchall() if row[0]}
+
+        created = 0
+        skipped = 0
+        for raw in raw_items:
+            if not isinstance(raw, dict):
+                skipped += 1
+                continue
+            source_item_id = str(
+                raw.get("itemId") or raw.get("item_id") or raw.get("id") or ""
+            ).strip()[:100]
+            title = str(raw.get("title") or "").strip()[:500]
+            if not source_item_id or not title or source_item_id in existing_ids:
+                skipped += 1
+                continue
+
+            image_urls: list[str] = []
+            for img in raw.get("images") or []:
+                url = str(img.get("url") if isinstance(img, dict) else img or "").strip()
+                if url and url not in image_urls:
+                    image_urls.append(url)
+            cover = str(raw.get("image") or raw.get("imageUrl") or "").strip()
+            if cover and cover not in image_urls:
+                image_urls.insert(0, cover)
+
+            raw_payload = dict(raw)
+            raw_payload["sourceLink"] = str(raw.get("link") or raw.get("itemUrl") or "")
+            await db.execute(
+                text(
+                    """
+                    INSERT INTO workflow_goods_draft(
+                        tenant_id, user_id, workflow_name, node_key, account_id,
+                        title, price, description, cover_pic, image_urls, category,
+                        stock, raw_payload, source_item_id, source_title_hash,
+                        publish_status, publish_attempt_count,
+                        created_time, updated_time, deleted
+                    ) VALUES(
+                        :tenant_id, :user_id, '商机采集', 'opportunity-collect', :account_id,
+                        :title, :price, :description, :cover_pic, :image_urls, :category,
+                        1, :raw_payload, :source_item_id, :source_title_hash,
+                        'draft', 0, NOW(), NOW(), 0
+                    )
+                    """
+                ),
+                {
+                    "tenant_id": tenant_id,
+                    "user_id": user_id,
+                    "account_id": account_id,
+                    "title": title,
+                    "price": str(raw.get("price") or "")[:50] or None,
+                    "description": str(raw.get("description") or ""),
+                    "cover_pic": cover or None,
+                    "image_urls": json.dumps(image_urls, ensure_ascii=False),
+                    "category": str(raw.get("category") or "")[:100] or None,
+                    "raw_payload": json.dumps(raw_payload, ensure_ascii=False),
+                    "source_item_id": source_item_id,
+                    "source_title_hash": hashlib.sha256(title.encode("utf-8")).hexdigest(),
+                },
+            )
+            existing_ids.add(source_item_id)
+            created += 1
+
+        await db.commit()
+        return ResultObject.success({
+            "created": created,
+            "skipped": skipped,
+            "total": len(raw_items),
+        })
+    except Exception as exc:
+        await db.rollback()
+        return safe_route_failure(
+            logger, exc,
+            operation="batch create opportunity drafts",
+            user_message="存入草稿箱失败，请稍后重试",
             code=503,
         )
 

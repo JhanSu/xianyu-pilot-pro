@@ -39,6 +39,8 @@
           <div style="flex:1"></div>
           <AppButton v-if="mode==='shop' && shopResults.length && !allCollected" type="primary" :disabled="shopLoading" @click="doCollectAll">一键采集全部</AppButton>
           <span v-else-if="mode==='shop' && shopResults.length" class="chip" style="color:#16bf78">已采集全部 {{ shopResults.length }} 条</span>
+          <span v-if="draftMessage" class="subtle" style="color:#16bf78">{{ draftMessage }}</span>
+          <AppButton v-if="items.length" :loading="draftSaving" @click="saveCollectedToDrafts">存入草稿箱</AppButton>
           <AppButton @click="resetView">重置</AppButton>
         </div>
 
@@ -472,6 +474,7 @@ import { rewriteOpportunity, getOpportunityAiStatus, getOpportunityImageStatus, 
 import { ensureAiTokenBalance } from '../utils/aiTokenGuard.js'
 import { guardFeatureAction } from '../composables/featureGuard.js'
 import { getLiteAccounts, checkAccountAuth } from '../api/accounts.js'
+import { batchCreateWorkflowDrafts } from '../api/workflowDrafts.js'
 import { publishItem, autoCategory } from '../api/items.js'
 import { getAiProviderStatus, suggestCategoryByAi } from '../api/aiProvider.js'
 import { fetchCategories } from '../api/categories.js'
@@ -527,6 +530,8 @@ const accountLoaded = ref(false)
 const accountAvailable = ref(false)
 const accountLoadError = ref('')
 const selectedPublishAddress = ref(null)
+const draftSaving = ref(false)
+const draftMessage = ref('')
 
 // 配置板块变量
 const configCurrency = ref('¥')
@@ -993,6 +998,7 @@ function resetOpportunityItemState() {
   oppAutoCategoryMsgType.value = 'info'
   oppAutoCategoryCandidates.value = []
   saveMessage.value = ''
+  draftMessage.value = ''
   error.value = ''
 }
 
@@ -1150,6 +1156,7 @@ async function doCollectShop() {
   }
   shopLoading.value = true
   error.value = ''
+  draftMessage.value = ''
   step.value = 0
   selectedItem.value = null
   allCollected.value = false
@@ -1254,6 +1261,47 @@ async function doCollectAll() {
     error.value = e.message || '全量采集请求失败'
   } finally {
     shopLoading.value = false
+  }
+}
+
+async function saveCollectedToDrafts() {
+  if (!items.value.length) {
+    error.value = '没有可存入草稿箱的商品'
+    return
+  }
+  const accountId = selectedAccountId.value || accounts.value[0]?.id
+  if (!accountId) {
+    error.value = '请先在「账号管理」添加并选择闲鱼账号'
+    return
+  }
+  draftSaving.value = true
+  draftMessage.value = ''
+  error.value = ''
+  try {
+    const itemsPayload = items.value.map(item => ({
+      itemId: item.itemId || extractId(item),
+      title: item.title,
+      price: item.price || '',
+      description: item.description || item.title,
+      image: item.image || '',
+      images: item.images || [],
+      link: item.link || '',
+      category: item.category || '',
+    }))
+    const res = await batchCreateWorkflowDrafts({
+      account_id: accountId,
+      items: itemsPayload,
+    })
+    const data = res?.data || {}
+    if (data.ok === false) throw new Error(data.message || data.error || '存入草稿箱失败')
+    const created = Number(data.created) || 0
+    const skipped = Number(data.skipped) || 0
+    draftMessage.value = `已存入草稿箱 ${created} 条${skipped ? `，跳过重复 ${skipped} 条` : ''}`
+    saveMessage.value = draftMessage.value
+  } catch (e) {
+    error.value = e.message || '存入草稿箱失败，请稍后重试'
+  } finally {
+    draftSaving.value = false
   }
 }
 

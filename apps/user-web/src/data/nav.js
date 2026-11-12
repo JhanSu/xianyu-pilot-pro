@@ -29,6 +29,7 @@ export const navCategories = [
       { key: 'products', label: '商品管理', icon: 'product' },
       { key: 'product-publish', label: '商品发布', icon: 'publish' },
       { key: 'opportunities', label: '商机发掘', icon: 'opportunity' },
+      { key: 'product-drafts', label: '商品草稿', icon: 'draft' },
       { key: 'goods-data', label: '商品数据分析', icon: 'data' }
     ]
   },
@@ -132,6 +133,7 @@ export const pageTitles = {
   'product-publish': ['商品发布', '创建并发布闲鱼商品'],
   'goods-data': ['商品数据分析', '查看商品曝光/订单趋势，筛选低效商品并一键重发或删除'],
   opportunities: ['商机发掘', '发现高潜力商品与经营机会'],
+  'product-drafts': ['商品草稿', '采集或工作流生成的商品草稿，可批量发布'],
   'fish-shop-data': ['鱼小铺数据分析', '查看鱼小铺账号的成交、曝光、浏览、访问等官方数据（仅鱼小铺账号）'],
   'fish-shop-browse': ['流量分布', '查看流量来源、商品、时间与地域分布（仅鱼小铺账号）'],
   messages: ['在线消息', '集中处理买家咨询与消息会话'],

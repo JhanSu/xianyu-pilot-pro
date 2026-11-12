@@ -22,6 +22,12 @@ import { pageParams } from '../utils/apiData.js'
 
 export const listWorkflowDrafts = params => request.get('/workflow/drafts', { params: pageParams(params) })
 
+/**
+ * 把采集到的商品批量存入系统商品草稿箱。
+ * @param {{account_id:number, items:Array<object>}} data
+ */
+export const batchCreateWorkflowDrafts = data => request.post('/workflow/drafts/batch-create', data || {})
+
 export const getWorkflowDraftStats = () => request.get('/workflow/drafts/stats')
 
 export const getWorkflowDraft = draftId => request.get(`/workflow/drafts/${draftId}`)

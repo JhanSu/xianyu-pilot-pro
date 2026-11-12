@@ -10,7 +10,7 @@
       <StatCard title="发布失败" :value="metricText(stats.failed)" :change="statsError ? '统计不可用' : '可重试'" icon="warning" color="red" />
     </div>
 
-    <CardPanel title="商品草稿箱" desc="工作流生成的商品草稿与发布记录，支持按状态、关键词筛选；失败草稿可重试发布">
+    <CardPanel title="商品草稿" desc="采集或工作流生成的商品草稿与发布记录，支持按状态、关键词筛选；失败草稿可重试发布">
       <!-- 筛选区 -->
       <div class="toolbar filter-bar">
         <div class="filter-chip-group">
