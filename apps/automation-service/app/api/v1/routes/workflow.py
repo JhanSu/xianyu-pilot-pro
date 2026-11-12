@@ -1892,7 +1892,7 @@ async def workflow_publish(
 # ==================== 商品草稿箱 ====================
 
 from ....services.workflow_draft_service import (  # noqa: E402
-    list_drafts, get_draft, retry_publish_draft,
+    list_drafts, get_draft, update_draft, batch_update_drafts, retry_publish_draft,
     batch_retry_publish_drafts, delete_draft, get_draft_stats,
 )
 
@@ -2107,6 +2107,62 @@ async def get_workflow_draft(
             logger, exc,
             operation="get workflow draft detail",
             user_message="草稿详情暂时无法查询，请稍后重试",
+            code=503,
+        )
+
+
+@router.post("/drafts/{draft_id}/update", response_model=ResultObject)
+async def update_workflow_draft_endpoint(
+    draft_id: int,
+    body: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """编辑草稿的标题、价格、分类、库存、商品详情。"""
+    try:
+        tenant_id = _require_tenant(current_user)
+    except ValueError:
+        return ResultObject.failed(TENANT_CONTEXT_REQUIRED_MESSAGE, 400)
+    if not isinstance(body, dict):
+        return ResultObject.failed("请求数据不能为空", 400)
+    try:
+        result = await update_draft(db, draft_id, tenant_id, body)
+        return ResultObject.success(result)
+    except ValueError as exc:
+        return ResultObject.failed(str(exc), 400)
+    except Exception as exc:
+        await db.rollback()
+        return safe_route_failure(
+            logger, exc,
+            operation="update workflow draft",
+            user_message="保存草稿失败，请稍后重试",
+            code=503,
+        )
+
+
+@router.post("/drafts/batch-update", response_model=ResultObject)
+async def batch_update_workflow_drafts_endpoint(
+    body: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """批量修改草稿字段。body: {"items": [{"id": 1, "title": "...", "price": "..."}]}"""
+    try:
+        tenant_id = _require_tenant(current_user)
+    except ValueError:
+        return ResultObject.failed(TENANT_CONTEXT_REQUIRED_MESSAGE, 400)
+    items = body.get("items") if isinstance(body, dict) else None
+    try:
+        result = await batch_update_drafts(db, tenant_id, items)
+        return ResultObject.success(result)
+    except ValueError as exc:
+        return ResultObject.failed(str(exc), 400)
+    except Exception as exc:
+        await db.rollback()
+        return safe_route_failure(
+            logger, exc,
+            operation="batch update workflow drafts",
+            user_message="批量保存草稿失败，请稍后重试",
             code=503,
         )
 

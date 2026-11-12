@@ -3024,8 +3024,11 @@ class XianyuItemPublisher:
                     len(card_list),
                 )
 
+                # 推荐接口有时返回 SUCCESS 但 categoryPredictResult 为空；
+                # 空 catId 不能当作推荐成功，否则 _build_publish_data 会带着空类目发布。
+                has_valid_category = bool(recommended_cat.get("catId"))
                 return {
-                    "recommended": True,
+                    "recommended": has_valid_category,
                     "catId": recommended_cat.get("catId", ""),
                     "catName": recommended_cat.get("catName", ""),
                     "channelCatId": recommended_cat.get("channelCatId", ""),
@@ -3292,7 +3295,7 @@ class XianyuItemPublisher:
         logger.info("Step 1/3: 类目推荐 titleLen=%d", len(title))
         recommend_result = self.category_recommend(title, desc, image_urls)
 
-        if recommend_result.get("recommended"):
+        if recommend_result.get("recommended") and recommend_result.get("catId"):
             category_info = recommend_result
             logger.info("类目推荐成功: %s (catId=%s)", category_info["catName"], category_info["catId"])
         else:

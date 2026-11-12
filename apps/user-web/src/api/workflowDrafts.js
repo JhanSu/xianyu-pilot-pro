@@ -33,6 +33,12 @@ export const getWorkflowDraftStats = () => request.get('/workflow/drafts/stats')
 
 export const getWorkflowDraft = draftId => request.get(`/workflow/drafts/${draftId}`)
 
+/** 编辑单个草稿：title / price / category / stock / description */
+export const updateWorkflowDraft = (draftId, data) => request.post(`/workflow/drafts/${draftId}/update`, data || {})
+
+/** 批量修改草稿：{ items: [{id, title?, price?, category?, stock?, description?}] } */
+export const batchUpdateWorkflowDrafts = data => request.post('/workflow/drafts/batch-update', data || {})
+
 /**
  * 重试发布单个草稿
  * @param {number} draftId 草稿 ID

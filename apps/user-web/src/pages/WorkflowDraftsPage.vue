@@ -38,6 +38,18 @@
         <AppButton :loading="loading" @click="onRefresh">刷新</AppButton>
       </div>
 
+      <!-- 批量编辑工具条 -->
+      <div v-if="records.length" class="batch-toolbar">
+        <label class="select-all-label">
+          <input type="checkbox" :checked="allSelected" @change="toggleSelectAll" />
+          <span>全选当前页</span>
+        </label>
+        <span v-if="selectedIds.length" class="selected-count">已选 {{ selectedIds.length }} 项</span>
+        <div style="flex:1"></div>
+        <AppButton size="small" type="primary" :disabled="!selectedIds.length" @click="openBatchDialog('title')">批量改标题</AppButton>
+        <AppButton size="small" :disabled="!selectedIds.length" @click="openBatchDialog('price')">批量改价格</AppButton>
+      </div>
+
       <!-- 三态：加载中 -->
       <div v-if="loading" class="loading-wrap">
         <div class="spinner"></div>
@@ -73,6 +85,9 @@
           :class="`is-${r.publish_status || 'draft'}`"
           @click="openDetail(r)"
         >
+          <label class="draft-check" @click.stop>
+            <input type="checkbox" :checked="selectedIds.includes(r.id)" @change="toggleSelect(r.id)" />
+          </label>
           <!-- 顶部状态条 -->
           <div class="card-status-bar" :class="`bar-${r.publish_status || 'draft'}`" />
 
@@ -251,6 +266,22 @@
               </div>
             </div>
 
+            <!-- 可编辑商品信息 -->
+            <div class="draft-edit-box">
+              <h3 class="section-subtitle"><Icon name="edit" /><span>编辑商品信息</span></h3>
+              <div class="edit-grid">
+                <label class="edit-field edit-field-wide"><span>标题</span><input v-model="editForm.title" maxlength="500" /></label>
+                <label class="edit-field"><span>价格</span><input v-model="editForm.price" placeholder="如 0.50" /></label>
+                <label class="edit-field"><span>分类</span><input v-model="editForm.category" placeholder="如 电子资料" /></label>
+                <label class="edit-field"><span>库存</span><input v-model.number="editForm.stock" type="number" min="0" /></label>
+              </div>
+              <label class="edit-field edit-field-wide"><span>商品详情</span><textarea v-model="editForm.description" rows="4" /></label>
+              <div class="edit-actions">
+                <AppButton type="primary" size="small" :loading="savingEdit" @click="saveDraftEdit">保存修改</AppButton>
+                <span v-if="editMessage" class="edit-message">{{ editMessage }}</span>
+              </div>
+            </div>
+
             <!-- 详细字段表格 -->
             <details class="detail-collapse" open>
               <summary>完整字段</summary>
@@ -326,6 +357,67 @@
         </div>
       </div>
     </div>
+
+    <!-- 批量编辑弹窗 -->
+    <div v-if="batchDialog.visible" class="modal-mask" @click.self="closeBatchDialog">
+      <div class="batch-dialog">
+        <div class="batch-dialog-header">
+          <h2>{{ batchDialog.mode === 'title' ? '批量修改标题' : '批量修改价格' }}</h2>
+          <button type="button" class="modal-close" @click="closeBatchDialog">×</button>
+        </div>
+        <p class="batch-dialog-hint">当前已选 {{ selectedIds.length }} 项，只作用于当前页选中的草稿。</p>
+
+        <template v-if="batchDialog.mode === 'title'">
+          <label class="batch-form-row">
+            <span>重命名规则</span>
+            <select v-model="batchDialog.titleRule">
+              <option value="find_replace">查找替换</option>
+              <option value="prefix">添加前缀</option>
+              <option value="suffix">添加后缀</option>
+              <option value="remove">删除字符</option>
+            </select>
+          </label>
+          <label v-if="batchDialog.titleRule === 'find_replace' || batchDialog.titleRule === 'remove'" class="batch-form-row">
+            <span>{{ batchDialog.titleRule === 'remove' ? '要删除的文字' : '查找内容' }}</span>
+            <input v-model="batchDialog.findText" placeholder="请输入文字" />
+          </label>
+          <label v-if="batchDialog.titleRule === 'find_replace'" class="batch-form-row">
+            <span>替换为</span>
+            <input v-model="batchDialog.replaceText" placeholder="留空表示删除" />
+          </label>
+          <label v-if="batchDialog.titleRule === 'prefix'" class="batch-form-row">
+            <span>添加前缀</span>
+            <input v-model="batchDialog.prefixText" placeholder="例如：【秒发货】" />
+          </label>
+          <label v-if="batchDialog.titleRule === 'suffix'" class="batch-form-row">
+            <span>添加后缀</span>
+            <input v-model="batchDialog.suffixText" placeholder="例如：包邮" />
+          </label>
+        </template>
+
+        <template v-else>
+          <label class="batch-form-row">
+            <span>价格规则</span>
+            <select v-model="batchDialog.priceRule">
+              <option value="set">设为固定价格</option>
+              <option value="add">统一增加</option>
+              <option value="subtract">统一减少</option>
+              <option value="percent">按百分比调整</option>
+            </select>
+          </label>
+          <label class="batch-form-row">
+            <span>数值</span>
+            <input v-model="batchDialog.priceValue" type="number" step="0.01" placeholder="例如 9.9 或 10" />
+          </label>
+        </template>
+
+        <div class="batch-preview">预览：{{ batchPreview }}</div>
+        <div class="batch-dialog-actions">
+          <AppButton @click="closeBatchDialog">取消</AppButton>
+          <AppButton type="primary" :loading="batchApplying" :disabled="!selectedIds.length" @click="applyBatchEdit">应用修改</AppButton>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -344,6 +436,8 @@ import {
   listWorkflowDrafts,
   getWorkflowDraftStats,
   getWorkflowDraft,
+  updateWorkflowDraft,
+  batchUpdateWorkflowDrafts,
   retryPublishDraft,
   batchRetryPublishDrafts,
   deleteWorkflowDraft
@@ -368,6 +462,22 @@ const batchRetrying = ref(false)
 const deleting = ref(false)
 const currentIndex = ref(0)
 const copied = ref(false)
+const selectedIds = ref([])
+const batchApplying = ref(false)
+const batchDialog = ref({
+  visible: false,
+  mode: 'title',
+  titleRule: 'find_replace',
+  findText: '',
+  replaceText: '',
+  prefixText: '',
+  suffixText: '',
+  priceRule: 'set',
+  priceValue: ''
+})
+const editForm = ref({ title: '', price: '', category: '', stock: 1, description: '' })
+const savingEdit = ref(false)
+const editMessage = ref('')
 
 // 账号列表（用于重试发布时选择账号）
 const accounts = ref([])
@@ -413,6 +523,16 @@ const parsedImages = computed(() => {
 })
 
 const currentImage = computed(() => parsedImages.value[currentIndex.value] || detail.value?.cover_pic || '')
+const selectedRecords = computed(() => records.value.filter(r => selectedIds.value.includes(r.id)))
+const allSelected = computed(() => records.value.length > 0 && records.value.every(r => selectedIds.value.includes(r.id)))
+const batchPreview = computed(() => {
+  const first = selectedRecords.value[0]
+  if (!first) return '请先勾选商品'
+  if (batchDialog.value.mode === 'title') {
+    return truncate(applyTitleRule(first.title || ''), 60) || '（空标题）'
+  }
+  return `¥${first.price || '—'} → ¥${applyPriceRule(first.price) || '—'}`
+})
 
 watch(detail, () => { currentIndex.value = 0 })
 
@@ -504,6 +624,8 @@ async function load() {
     records.value = data.records
     total.value = data.total
     page.value = data.page
+    const pageIds = new Set(data.records.map(r => r.id))
+    selectedIds.value = selectedIds.value.filter(id => pageIds.has(id))
   } catch (e) {
     records.value = []
     total.value = 0
@@ -555,8 +677,20 @@ function onSizeChange(size) {
   load()
 }
 
+function hydrateEditForm(record) {
+  editForm.value = {
+    title: record?.title || '',
+    price: record?.price || '',
+    category: record?.category || '',
+    stock: record?.stock ?? 1,
+    description: record?.description || ''
+  }
+  editMessage.value = ''
+}
+
 function openDetail(record) {
   detail.value = record
+  hydrateEditForm(record)
   // 打开详情时重置账号选择为草稿原账号
   retryAccountId.value = null
 }
@@ -565,6 +699,7 @@ function closeDetail() {
   detail.value = null
   copied.value = false
   retryAccountId.value = null
+  editMessage.value = ''
 }
 
 async function refreshDetail(draftId) {
@@ -573,9 +708,143 @@ async function refreshDetail(draftId) {
     const data = res && res.data
     if (data && typeof data === 'object' && !Array.isArray(data)) {
       detail.value = data
+      hydrateEditForm(data)
     }
   } catch (e) {
     // 详情刷新失败时保持当前详情，不阻塞主流程
+  }
+}
+
+function toggleSelect(id) {
+  const index = selectedIds.value.indexOf(id)
+  if (index >= 0) selectedIds.value.splice(index, 1)
+  else selectedIds.value.push(id)
+}
+
+function toggleSelectAll(event) {
+  if (event?.target?.checked) {
+    selectedIds.value = [...new Set([...selectedIds.value, ...records.value.map(r => r.id)])]
+  } else {
+    const pageIds = new Set(records.value.map(r => r.id))
+    selectedIds.value = selectedIds.value.filter(id => !pageIds.has(id))
+  }
+}
+
+function openBatchDialog(mode) {
+  if (!selectedIds.value.length) return
+  batchDialog.value = {
+    visible: true,
+    mode,
+    titleRule: 'find_replace',
+    findText: '',
+    replaceText: '',
+    prefixText: '',
+    suffixText: '',
+    priceRule: 'set',
+    priceValue: ''
+  }
+}
+
+function closeBatchDialog() {
+  batchDialog.value.visible = false
+}
+
+function applyTitleRule(title) {
+  let result = String(title || '')
+  const d = batchDialog.value
+  if (d.titleRule === 'find_replace') {
+    if (d.findText) result = result.split(d.findText).join(d.replaceText || '')
+  } else if (d.titleRule === 'prefix') {
+    result = `${d.prefixText || ''}${result}`
+  } else if (d.titleRule === 'suffix') {
+    result = `${result}${d.suffixText || ''}`
+  } else if (d.titleRule === 'remove') {
+    if (d.findText) result = result.split(d.findText).join('')
+  }
+  return result.trim()
+}
+
+function applyPriceRule(price) {
+  const d = batchDialog.value
+  const base = Number(String(price ?? '').replace(/[^\d.-]/g, ''))
+  const value = Number(String(d.priceValue ?? '').replace(/[^\d.-]/g, ''))
+  if (!Number.isFinite(base) || !Number.isFinite(value)) return String(price ?? '')
+  let next = base
+  if (d.priceRule === 'set') next = value
+  else if (d.priceRule === 'add') next = base + value
+  else if (d.priceRule === 'subtract') next = base - value
+  else if (d.priceRule === 'percent') next = base * (1 + value / 100)
+  return next.toFixed(2).replace(/\.00$/, '')
+}
+
+async function applyBatchEdit() {
+  if (!selectedIds.value.length || batchApplying.value) return
+  const selected = selectedRecords.value
+  if (!selected.length) {
+    globalError.value = '当前页没有选中的草稿'
+    return
+  }
+  const items = selected.map(record => {
+    if (batchDialog.value.mode === 'title') {
+      return { id: record.id, title: applyTitleRule(record.title) }
+    }
+    return { id: record.id, price: applyPriceRule(record.price) }
+  }).filter(item => batchDialog.value.mode === 'title' ? item.title : item.price)
+
+  if (!items.length) {
+    globalError.value = '没有可修改的内容'
+    return
+  }
+  batchApplying.value = true
+  globalError.value = ''
+  try {
+    const res = await batchUpdateWorkflowDrafts({ items })
+    const data = res?.data || {}
+    const updated = Number(data.updated) || 0
+    selectedIds.value = []
+    closeBatchDialog()
+    await Promise.all([load(), loadStats()])
+    window.dispatchEvent(new CustomEvent('xya-toast', { detail: { message: `批量修改完成，共更新 ${updated} 项`, type: 'success' } }))
+  } catch (e) {
+    globalError.value = (e && e.message) || '批量修改失败，请稍后重试'
+  } finally {
+    batchApplying.value = false
+  }
+}
+
+async function saveDraftEdit() {
+  if (!detail.value || savingEdit.value) return
+  const title = String(editForm.value.title || '').trim()
+  if (!title) {
+    editMessage.value = '标题不能为空'
+    return
+  }
+  const stock = Number(editForm.value.stock)
+  if (!Number.isInteger(stock) || stock < 0) {
+    editMessage.value = '库存必须为大于等于 0 的整数'
+    return
+  }
+  savingEdit.value = true
+  editMessage.value = ''
+  try {
+    const res = await updateWorkflowDraft(detail.value.id, {
+      title,
+      price: String(editForm.value.price || '').trim(),
+      category: String(editForm.value.category || '').trim(),
+      stock,
+      description: editForm.value.description || ''
+    })
+    const data = res?.data
+    if (data && typeof data === 'object') {
+      detail.value = data
+      hydrateEditForm(data)
+    }
+    editMessage.value = '已保存'
+    await Promise.all([load(), loadStats()])
+  } catch (e) {
+    editMessage.value = (e && e.message) || '保存失败，请稍后重试'
+  } finally {
+    savingEdit.value = false
   }
 }
 
@@ -757,6 +1026,140 @@ onBeforeUnmount(() => {
   height: 22px;
   background: #e7edf7;
   margin: 0 4px;
+}
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #e7edf7;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+.select-all-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #42536e;
+  font-size: 13px;
+  cursor: pointer;
+}
+.selected-count {
+  color: #0d6bff;
+  font-size: 13px;
+  font-weight: 600;
+}
+.draft-check {
+  position: absolute;
+  z-index: 3;
+  top: 10px;
+  left: 10px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(31, 53, 94, 0.16);
+}
+.draft-check input {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+.draft-edit-box {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #e7edf7;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+.edit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #5b6b83;
+  font-size: 12px;
+}
+.edit-field-wide { grid-column: 1 / -1; }
+.edit-field input,
+.edit-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #dbe5f2;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #1d2b45;
+  background: #fff;
+  outline: none;
+  resize: vertical;
+}
+.edit-field input:focus,
+.edit-field textarea:focus { border-color: #0d6bff; }
+.edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.edit-message { color: #16bf78; font-size: 12px; }
+.batch-dialog {
+  width: min(520px, calc(100vw - 32px));
+  padding: 22px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 20px 70px rgba(18, 35, 68, 0.25);
+}
+.batch-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.batch-dialog-header h2 { margin: 0; font-size: 18px; color: #13213d; }
+.batch-dialog-hint { margin: 0 0 16px; color: #7a879e; font-size: 12px; }
+.batch-form-row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  color: #42536e;
+  font-size: 13px;
+}
+.batch-form-row select,
+.batch-form-row input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #dbe5f2;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #1d2b45;
+  background: #fff;
+}
+.batch-preview {
+  margin: 8px 0 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f4f8ff;
+  color: #42536e;
+  font-size: 12px;
+  word-break: break-all;
+}
+.batch-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 /* === 加载态 === */

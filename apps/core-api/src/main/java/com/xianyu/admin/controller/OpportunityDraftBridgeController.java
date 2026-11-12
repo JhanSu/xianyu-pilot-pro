@@ -3,6 +3,7 @@ package com.xianyu.admin.controller;
 import com.xianyu.admin.common.BizException;
 import com.xianyu.admin.common.Result;
 import com.xianyu.admin.service.AutomationClient;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -36,6 +37,33 @@ public class OpportunityDraftBridgeController {
             throw e;
         } catch (Exception ex) {
             throw new BizException(503, "存入草稿箱暂时不可用，请稍后重试");
+        }
+    }
+
+    @PostMapping("/workflow/drafts/{draftId}/update")
+    public Result<Object> updateWorkflowDraft(@PathVariable("draftId") long draftId,
+                                              @RequestBody(required = false) Map<String, Object> body) {
+        Map<String, Object> payload = body == null ? new LinkedHashMap<>() : new LinkedHashMap<>(body);
+        try {
+            return Result.ok(automationClient.postInternalForData(
+                    "/api/workflow/drafts/" + draftId + "/update", payload));
+        } catch (BizException e) {
+            throw e;
+        } catch (Exception ex) {
+            throw new BizException(503, "保存草稿暂时不可用，请稍后重试");
+        }
+    }
+
+    @PostMapping("/workflow/drafts/batch-update")
+    public Result<Object> batchUpdateWorkflowDrafts(@RequestBody(required = false) Map<String, Object> body) {
+        Map<String, Object> payload = body == null ? new LinkedHashMap<>() : new LinkedHashMap<>(body);
+        try {
+            return Result.ok(automationClient.postInternalForData(
+                    "/api/workflow/drafts/batch-update", payload));
+        } catch (BizException e) {
+            throw e;
+        } catch (Exception ex) {
+            throw new BizException(503, "批量保存草稿暂时不可用，请稍后重试");
         }
     }
 }

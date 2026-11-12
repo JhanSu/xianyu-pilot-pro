@@ -112,6 +112,100 @@ async def get_draft(session: AsyncSession, draft_id: int, tenant_id: int) -> Opt
     return record
 
 
+async def update_draft(
+    session: AsyncSession,
+    draft_id: int,
+    tenant_id: int,
+    updates: Dict[str, Any],
+) -> Dict[str, Any]:
+    """编辑草稿的标题、价格、分类、库存、商品详情。"""
+    result = await session.execute(
+        text("SELECT * FROM workflow_goods_draft WHERE id=:id AND tenant_id=:tid AND deleted=0"),
+        {"id": draft_id, "tid": tenant_id},
+    )
+    row = result.first()
+    if not row:
+        raise ValueError("草稿不存在")
+
+    allowed = {"title", "price", "category", "stock", "description"}
+    fields: Dict[str, Any] = {}
+    for key in allowed:
+        if key not in updates:
+            continue
+        value = updates.get(key)
+        if key == "title":
+            title = str(value or "").strip()
+            if not title:
+                raise ValueError("标题不能为空")
+            fields["title"] = title[:500]
+        elif key == "price":
+            fields["price"] = str(value or "").strip()[:50] or None
+        elif key == "category":
+            fields["category"] = str(value or "").strip()[:100] or None
+        elif key == "stock":
+            try:
+                stock = int(value)
+            except (TypeError, ValueError):
+                raise ValueError("库存必须为整数")
+            if stock < 0:
+                raise ValueError("库存不能为负数")
+            fields["stock"] = stock
+        elif key == "description":
+            fields["description"] = str(value or "")
+
+    if not fields:
+        raise ValueError("没有可更新的字段")
+
+    set_clause = ", ".join(f"{key}=:{key}" for key in fields)
+    params = {**fields, "id": draft_id, "tid": tenant_id}
+    await session.execute(
+        text(
+            f"UPDATE workflow_goods_draft SET {set_clause}, updated_time=NOW() "
+            "WHERE id=:id AND tenant_id=:tid AND deleted=0"
+        ),
+        params,
+    )
+    await session.commit()
+    updated = await get_draft(session, draft_id, tenant_id)
+    if updated is None:
+        raise ValueError("草稿不存在")
+    return updated
+
+
+async def batch_update_drafts(
+    session: AsyncSession,
+    tenant_id: int,
+    items: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """批量更新草稿字段；items 每项包含 id 及要修改的字段。"""
+    if not isinstance(items, list) or not items:
+        raise ValueError("items 不能为空")
+    if len(items) > 500:
+        raise ValueError("单次最多修改 500 个商品")
+
+    updated = 0
+    skipped = 0
+    for item in items:
+        if not isinstance(item, dict):
+            skipped += 1
+            continue
+        try:
+            draft_id = int(item.get("id"))
+        except (TypeError, ValueError):
+            skipped += 1
+            continue
+        payload = {k: v for k, v in item.items() if k in {"title", "price", "category", "stock", "description"}}
+        if not payload:
+            skipped += 1
+            continue
+        try:
+            await update_draft(session, draft_id, tenant_id, payload)
+            updated += 1
+        except ValueError:
+            skipped += 1
+    return {"updated": updated, "skipped": skipped, "total": len(items)}
+
+
 async def retry_publish_draft(
     session: AsyncSession,
     draft_id: int,
@@ -207,7 +301,7 @@ async def retry_publish_draft(
             await session.commit()
             return {"success": True, "xianyuGoodsId": xianyu_goods_id, "draftId": draft_id}
 
-        err_msg = str(result_pub.get("error", "发布失败"))
+        err_msg = str(result_pub.get("error") or result_pub.get("message") or "发布失败")
         await session.execute(
             text(
                 "UPDATE workflow_goods_draft "
