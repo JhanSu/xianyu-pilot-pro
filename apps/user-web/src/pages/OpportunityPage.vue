@@ -38,6 +38,7 @@
           <span class="subtle">{{ searchLoading || shopLoading ? '加载中...' : resultCountText }}</span>
           <div style="flex:1"></div>
           <AppButton v-if="mode==='shop' && shopResults.length && !allCollected" type="primary" :disabled="shopLoading" @click="doCollectAll">一键采集全部</AppButton>
+          <span v-else-if="mode==='shop' && shopResults.length" class="chip" style="color:#16bf78">已采集全部 {{ shopResults.length }} 条</span>
           <AppButton @click="resetView">重置</AppButton>
         </div>
 
@@ -1220,6 +1221,9 @@ async function loadStoreItems(userId) {
       const storeItems = res.items.map(normalizeOpportunityItem)
       items.value = storeItems
       shopResults.value = [...storeItems]
+      // 店铺商品接口一次返回全部在售商品；加载完成即代表“全部采集”完成，
+      // 避免“一键采集全部”按钮变成点击无反馈的遗留按钮。
+      allCollected.value = storeItems.length > 0
       collected.value = true
       step.value = 1
       if (storeItems.length) {
