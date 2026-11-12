@@ -1,5 +1,4 @@
 import request from '../utils/request.js'
-import { pageParams } from '../utils/apiData.js'
 
 /**
  * 工作流商品草稿箱 API
@@ -20,7 +19,9 @@ import { pageParams } from '../utils/apiData.js'
  *   - 不传时回退到草稿原 account_id
  */
 
-export const listWorkflowDrafts = params => request.get('/workflow/drafts', { params: pageParams(params) })
+// Java /workflow/drafts 使用 page/pageSize 参数，不能套用通用的 pageParams
+// （后者会改写成 current/size，导致后端始终按第 1 页返回）。
+export const listWorkflowDrafts = params => request.get('/workflow/drafts', { params: params || {} })
 
 /**
  * 把采集到的商品批量存入系统商品草稿箱。
