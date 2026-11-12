@@ -197,7 +197,10 @@ function normalizeUrl(url?: string, itemId?: string): string | undefined {
 function normalizeImageUrl(url?: string): string | undefined {
   if (!url) return undefined;
   if (url.startsWith('//')) return `https:${url}`;
-  if (url.startsWith('http')) return url;
+  // 闲鱼 MTOP 常返回 http://img.alicdn.com/...，user-web 的 CSP 只允许 https 图片，
+  // 统一升级为 https，避免商机发掘/店铺采集缩略图被浏览器拦截。
+  if (url.startsWith('http://')) return `https://${url.substring(7)}`;
+  if (url.startsWith('https://')) return url;
   return url;
 }
 
@@ -578,10 +581,13 @@ async function fetchExpectedStoreItemCount(userId: string, cookieHeader?: string
 }
 
 async function tryClickItemsTab(page: Page): Promise<void> {
+  // 店铺页默认「综合」列表只渲染前 100 条；必须先切到「在售」筛选，
+  // 再滚动才能加载该店铺的全部在售商品（例如 198 条）。
   const selectors = [
+    'text=在售',
+    '[role="tab"]:has-text("在售")',
     'text=宝贝',
     'text=商品',
-    'text=在售',
     '[role="tab"]:has-text("宝贝")',
     '[role="tab"]:has-text("商品")',
   ];

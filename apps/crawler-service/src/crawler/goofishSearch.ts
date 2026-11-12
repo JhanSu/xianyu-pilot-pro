@@ -117,8 +117,9 @@ function parseMtopSearchResponse(json: unknown): SearchResultItem[] {
     // title: exContent.title 是商品完整描述标题
     const title = String(ex.title || '').trim();
 
-    // picUrl: 商品封面图
-    const picUrl = String(ex.picUrl || '').trim();
+    // picUrl: 商品封面图；统一升级为 https，避免 user-web CSP 拦截 http 图片
+    const rawPicUrl = String(ex.picUrl || '').trim();
+    const picUrl = rawPicUrl.startsWith('http://') ? `https://${rawPicUrl.substring(7)}` : rawPicUrl;
 
     // price: exContent.price 是数组 [{text, type}, ...]
     //   - type="sign" 是前缀（如"当前价¥"、"¥"）
