@@ -104,7 +104,7 @@ public class DashboardService {
             // 商品总数/在售/已售
             vo.setGoodsCount(goodsMapper.count(tenantId, accountId, null, null, null, 0));
             vo.setSellingGoodsCount(goodsMapper.count(tenantId, accountId, null, 1, null, 0));
-            vo.setTotalSoldCount(goodsMapper.count(tenantId, accountId, null, 2, null, 0));
+            vo.setTotalSoldCount(goodsMapper.count(tenantId, accountId, null, 0, null, 0));
 
             // 今日订单/销售额
             vo.setTodayOrderCount(orderMapper.countTodayByAccount(tenantId, accountId));

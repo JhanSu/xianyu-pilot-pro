@@ -107,7 +107,8 @@ public interface XianyuGoodsMapper {
     @Select("SELECT COUNT(*) FROM xianyu_goods WHERE tenant_id = #{tenantId} AND status = 1 AND deleted = 0")
     int countSelling(@Param("tenantId") Long tenantId);
 
-    @Select("SELECT COUNT(*) FROM xianyu_goods WHERE tenant_id = #{tenantId} AND status = 2 AND deleted = 0")
+    // DB 约定 status=0 为下架/已售出/关闭，status=2 不是有效商品状态。
+    @Select("SELECT COUNT(*) FROM xianyu_goods WHERE tenant_id = #{tenantId} AND status = 0 AND deleted = 0")
     int countSold(@Param("tenantId") Long tenantId);
 
     @Select("SELECT category, COUNT(*) AS goods_count FROM xianyu_goods WHERE tenant_id = #{tenantId} AND deleted = 0 GROUP BY category ORDER BY goods_count DESC")
