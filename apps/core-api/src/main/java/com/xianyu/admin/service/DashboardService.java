@@ -21,7 +21,7 @@ public class DashboardService {
     private final XianyuAccountMapper accountMapper;
     private final XianyuGoodsMapper goodsMapper;
     private final XianyuTradeOrderMapper orderMapper;
-    private final XianyuConversationMapper conversationMapper;
+    private final XianyuMessageMapper messageMapper;
     private final AutoReplyLogMapper autoReplyLogMapper;
     private final XianyuAccountRuntimeMapper runtimeMapper;
     private final DeliveryRecordMapper deliveryRecordMapper;
@@ -32,7 +32,7 @@ public class DashboardService {
     public DashboardService(XianyuAccountMapper accountMapper,
                             XianyuGoodsMapper goodsMapper,
                             XianyuTradeOrderMapper orderMapper,
-                            XianyuConversationMapper conversationMapper,
+                            XianyuMessageMapper messageMapper,
                             AutoReplyLogMapper autoReplyLogMapper,
                             XianyuAccountRuntimeMapper runtimeMapper,
                             DeliveryRecordMapper deliveryRecordMapper,
@@ -42,7 +42,7 @@ public class DashboardService {
         this.accountMapper = accountMapper;
         this.goodsMapper = goodsMapper;
         this.orderMapper = orderMapper;
-        this.conversationMapper = conversationMapper;
+        this.messageMapper = messageMapper;
         this.autoReplyLogMapper = autoReplyLogMapper;
         this.runtimeMapper = runtimeMapper;
         this.deliveryRecordMapper = deliveryRecordMapper;
@@ -79,7 +79,7 @@ public class DashboardService {
             vo.setTodaySalesAmount(orderMapper.sumTodayAmount(tenantId));
 
             // 消息数（会话数）
-            vo.setMessageCount(conversationMapper.countAll(tenantId));
+            vo.setMessageCount(messageMapper.countAll(tenantId));
 
             // 今日自动回复命中
             vo.setAutoReplyCount(autoReplyLogMapper.countTodayHits(tenantId));
@@ -111,7 +111,7 @@ public class DashboardService {
             vo.setTodaySalesAmount(orderMapper.sumTodayAmountByAccount(tenantId, accountId));
 
             // 消息数（会话数，按账号过滤）
-            vo.setMessageCount(conversationMapper.count(tenantId, accountId, null));
+            vo.setMessageCount(messageMapper.count(tenantId, accountId));
 
             // 今日自动回复命中
             vo.setAutoReplyCount(autoReplyLogMapper.countTodayHitsByAccount(tenantId, accountId));
@@ -175,7 +175,7 @@ public class DashboardService {
         Map<String, Integer> orderMap = toDailyMap(orderDaily);
 
         // 消息趋势
-        List<Map<String, Object>> messageDaily = conversationMapper.countDailyByAccount(tenantId, accountId, startDate);
+        List<Map<String, Object>> messageDaily = messageMapper.countDailyByAccount(tenantId, accountId, startDate);
         Map<String, Integer> messageMap = toDailyMap(messageDaily);
 
         // 填充所有日期
@@ -303,7 +303,7 @@ public class DashboardService {
         Map<String, Integer> orderMap = toDailyMap(orderDaily);
 
         // 消息
-        List<Map<String, Object>> messageDaily = conversationMapper.countDailyByAccount(tenantId, accountId, startDate);
+        List<Map<String, Object>> messageDaily = messageMapper.countDailyByAccount(tenantId, accountId, startDate);
         Map<String, Integer> messageMap = toDailyMap(messageDaily);
 
         // 发货

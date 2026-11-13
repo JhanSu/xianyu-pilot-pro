@@ -55,6 +55,6 @@ public interface XianyuAccountRuntimeMapper {
                           @Param("message") String message,
                           @Param("checkedAt") LocalDateTime checkedAt);
 
-    @Select("SELECT COUNT(*) FROM xianyu_account_runtime WHERE tenant_id = #{tenantId} AND ws_status = #{wsStatus}")
+    @Select("SELECT COUNT(*) FROM xianyu_account_runtime WHERE tenant_id = #{tenantId} AND ws_status = #{wsStatus} AND deleted = 0")
     int countByWsStatus(@Param("tenantId") Long tenantId, @Param("wsStatus") Integer wsStatus);
 }
